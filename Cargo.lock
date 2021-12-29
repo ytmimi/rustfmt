@@ -453,6 +453,7 @@ dependencies = [
  "term",
  "thiserror",
  "toml",
+ "unicode-linebreak",
  "unicode-segmentation",
  "unicode-width",
  "unicode_categories",
@@ -629,6 +630,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c7aabe75941d914b72bf3e5d3932ed92ce0664d49d8432305a8b547c37227724"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "unicode-linebreak"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a52dcaab0c48d931f7cc8ef826fa51690a08e1ea55117ef26f89864f532383f"
+dependencies = [
+ "regex",
 ]
 
 [[package]]
