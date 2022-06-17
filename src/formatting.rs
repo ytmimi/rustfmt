@@ -198,6 +198,16 @@ impl<'a, T: FormatHandler + 'a> FormatContext<'a, T> {
         is_macro_def: bool,
     ) -> Result<(), ErrorKind> {
         let snippet_provider = self.parse_session.snippet_provider(module.span);
+
+        if snippet_provider.entire_snippet().trim().is_empty() {
+            return self.handler.handle_formatted_file(
+                &self.parse_session,
+                path,
+                String::new(),
+                &mut self.report,
+            );
+        }
+
         let mut visitor = FmtVisitor::from_parse_sess(
             &self.parse_session,
             self.config,
