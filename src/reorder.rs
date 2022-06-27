@@ -88,7 +88,7 @@ fn rewrite_reorderable_or_regroupable_items(
         ast::ItemKind::Use(..) => {
             let mut normalized_items: Vec<_> = reorderable_items
                 .iter()
-                .filter_map(|item| UseTree::from_ast_with_normalization(context, item))
+                .filter_map(|item| UseTree::from_ast_with_normalization(context, item, true))
                 .collect();
             let cloned = normalized_items.clone();
             // Add comments before merging.

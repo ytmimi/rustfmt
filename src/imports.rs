@@ -44,6 +44,7 @@ impl<'a> FmtVisitor<'a> {
             Some(item.span.lo()),
             Some(item.attrs.clone()),
         )
+        .normalize(false)
         .rewrite_top_level(&self.get_context(), shape);
         match rw {
             Some(ref s) if s.is_empty() => {
@@ -390,6 +391,7 @@ impl UseTree {
     pub(crate) fn from_ast_with_normalization(
         context: &RewriteContext<'_>,
         item: &ast::Item,
+        sort: bool,
     ) -> Option<UseTree> {
         match item.kind {
             ast::ItemKind::Use(ref use_tree) => Some(
@@ -405,7 +407,7 @@ impl UseTree {
                         Some(item.attrs.clone())
                     },
                 )
-                .normalize(),
+                .normalize(sort),
             ),
             _ => None,
         }
@@ -528,7 +530,7 @@ impl UseTree {
     }
 
     // Do the adjustments that rustfmt does elsewhere to use paths.
-    pub(crate) fn normalize(mut self) -> UseTree {
+    pub(crate) fn normalize(mut self, sort: bool) -> UseTree {
         let mut last = self.path.pop().expect("Empty use tree?");
         // Hack around borrow checker.
         let mut normalize_sole_list = false;
@@ -600,16 +602,28 @@ impl UseTree {
                     for seg in &list[0].path {
                         self.path.push(seg.clone());
                     }
-                    return self.normalize();
+                    return self.normalize(sort);
                 }
                 _ => unreachable!(),
             }
         }
 
-        // Recursively normalize elements of a list use (including sorting the list).
+        // Recursively normalize elements of a list use (optionally including sorting the list).
         if let UseSegmentKind::List(list) = last.kind {
-            let mut list = list.into_iter().map(UseTree::normalize).collect::<Vec<_>>();
-            list.sort();
+            let mut list = list
+                .into_iter()
+                .map(|tree| tree.normalize(sort))
+                .unique()
+                .collect::<Vec<_>>();
+            if sort {
+                list.sort();
+            }
+            if list.len() == 1 && list[0].to_string() != "self" {
+                for seg in &list[0].path {
+                    self.path.push(seg.clone());
+                }
+                return self.normalize(sort);
+            }
             last = UseSegment {
                 kind: UseSegmentKind::List(list),
                 version: last.version,
@@ -1420,67 +1434,75 @@ mod test {
 
     #[test]
     fn test_use_tree_normalize() {
-        assert_eq!(parse_use_tree("a::self").normalize(), parse_use_tree("a"));
         assert_eq!(
-            parse_use_tree("a::self as foo").normalize(),
+            parse_use_tree("a::self").normalize(true),
+            parse_use_tree("a")
+        );
+        assert_eq!(
+            parse_use_tree("a::self as foo").normalize(true),
             parse_use_tree("a as foo")
         );
         assert_eq!(
-            parse_use_tree("a::{self}").normalize(),
+            parse_use_tree("a::{self}").normalize(true),
             parse_use_tree("a::{self}")
         );
-        assert_eq!(parse_use_tree("a::{b}").normalize(), parse_use_tree("a::b"));
         assert_eq!(
-            parse_use_tree("a::{b, c::self}").normalize(),
+            parse_use_tree("a::{b}").normalize(true),
+            parse_use_tree("a::b")
+        );
+        assert_eq!(
+            parse_use_tree("a::{b, c::self}").normalize(true),
             parse_use_tree("a::{b, c}")
         );
         assert_eq!(
-            parse_use_tree("a::{b as bar, c::self}").normalize(),
+            parse_use_tree("a::{b as bar, c::self}").normalize(true),
             parse_use_tree("a::{b as bar, c}")
         );
     }
 
     #[test]
     fn test_use_tree_ord() {
-        assert!(parse_use_tree("a").normalize() < parse_use_tree("aa").normalize());
-        assert!(parse_use_tree("a").normalize() < parse_use_tree("a::a").normalize());
-        assert!(parse_use_tree("a").normalize() < parse_use_tree("*").normalize());
-        assert!(parse_use_tree("a").normalize() < parse_use_tree("{a, b}").normalize());
-        assert!(parse_use_tree("*").normalize() < parse_use_tree("{a, b}").normalize());
+        assert!(parse_use_tree("a").normalize(true) < parse_use_tree("aa").normalize(true));
+        assert!(parse_use_tree("a").normalize(true) < parse_use_tree("a::a").normalize(true));
+        assert!(parse_use_tree("a").normalize(true) < parse_use_tree("*").normalize(true));
+        assert!(parse_use_tree("a").normalize(true) < parse_use_tree("{a, b}").normalize(true));
+        assert!(parse_use_tree("*").normalize(true) < parse_use_tree("{a, b}").normalize(true));
 
         assert!(
-            parse_use_tree("aaaaaaaaaaaaaaa::{bb, cc, dddddddd}").normalize()
-                < parse_use_tree("aaaaaaaaaaaaaaa::{bb, cc, ddddddddd}").normalize()
+            parse_use_tree("aaaaaaaaaaaaaaa::{bb, cc, dddddddd}").normalize(true)
+                < parse_use_tree("aaaaaaaaaaaaaaa::{bb, cc, ddddddddd}").normalize(true)
         );
         assert!(
-            parse_use_tree("serde::de::{Deserialize}").normalize()
-                < parse_use_tree("serde_json").normalize()
-        );
-        assert!(parse_use_tree("a::b::c").normalize() < parse_use_tree("a::b::*").normalize());
-        assert!(
-            parse_use_tree("foo::{Bar, Baz}").normalize()
-                < parse_use_tree("{Bar, Baz}").normalize()
-        );
-
-        assert!(
-            parse_use_tree("foo::{qux as bar}").normalize()
-                < parse_use_tree("foo::{self as bar}").normalize()
+            parse_use_tree("serde::de::{Deserialize}").normalize(true)
+                < parse_use_tree("serde_json").normalize(true)
         );
         assert!(
-            parse_use_tree("foo::{qux as bar}").normalize()
-                < parse_use_tree("foo::{baz, qux as bar}").normalize()
+            parse_use_tree("a::b::c").normalize(true) < parse_use_tree("a::b::*").normalize(true)
         );
         assert!(
-            parse_use_tree("foo::{self as bar, baz}").normalize()
-                < parse_use_tree("foo::{baz, qux as bar}").normalize()
+            parse_use_tree("foo::{Bar, Baz}").normalize(true)
+                < parse_use_tree("{Bar, Baz}").normalize(true)
         );
 
-        assert!(parse_use_tree("foo").normalize() < parse_use_tree("Foo").normalize());
-        assert!(parse_use_tree("foo").normalize() < parse_use_tree("foo::Bar").normalize());
+        assert!(
+            parse_use_tree("foo::{qux as bar}").normalize(true)
+                < parse_use_tree("foo::{self as bar}").normalize(true)
+        );
+        assert!(
+            parse_use_tree("foo::{qux as bar}").normalize(true)
+                < parse_use_tree("foo::{baz, qux as bar}").normalize(true)
+        );
+        assert!(
+            parse_use_tree("foo::{self as bar, baz}").normalize(true)
+                < parse_use_tree("foo::{baz, qux as bar}").normalize(true)
+        );
+
+        assert!(parse_use_tree("foo").normalize(true) < parse_use_tree("Foo").normalize(true));
+        assert!(parse_use_tree("foo").normalize(true) < parse_use_tree("foo::Bar").normalize(true));
 
         assert!(
-            parse_use_tree("std::cmp::{d, c, b, a}").normalize()
-                < parse_use_tree("std::cmp::{b, e, g, f}").normalize()
+            parse_use_tree("std::cmp::{d, c, b, a}").normalize(true)
+                < parse_use_tree("std::cmp::{b, e, g, f}").normalize(true)
         );
     }
 
