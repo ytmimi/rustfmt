@@ -249,6 +249,14 @@ impl ConfigCodeBlock {
     }
 }
 
+fn read_config_file_lines(name: &str) -> impl Iterator<Item = String> {
+    BufReader::new(
+        fs::File::open(Path::new(name)).unwrap_or_else(|_| panic!("couldn't read file {}", name)),
+    )
+    .lines()
+    .map(Result::unwrap)
+}
+
 #[test]
 fn configuration_snippet_tests() {
     super::init_log();
@@ -267,13 +275,7 @@ fn configuration_snippet_tests() {
 // Read Configurations.md and build a `Vec` of `ConfigCodeBlock` structs with one
 // entry for each Rust code block found.
 fn get_code_blocks() -> Vec<ConfigCodeBlock> {
-    let mut file_iter = BufReader::new(
-        fs::File::open(Path::new(CONFIGURATIONS_FILE_NAME))
-            .unwrap_or_else(|_| panic!("couldn't read file {}", CONFIGURATIONS_FILE_NAME)),
-    )
-    .lines()
-    .map(Result::unwrap)
-    .enumerate();
+    let mut file_iter = read_config_file_lines(CONFIGURATIONS_FILE_NAME).enumerate();
     let mut code_blocks: Vec<ConfigCodeBlock> = Vec::new();
     let mut hash_set = Config::hash_set();
 
@@ -298,13 +300,7 @@ fn check_unstable_option_tracking_issue_numbers() {
         regex::Regex::new(r"\(tracking issue: \[#(?P<number>\d+)\]\((?P<link>\S+)\)\)")
             .expect("failed creating configuration pattern");
 
-    let lines = BufReader::new(
-        fs::File::open(Path::new(CONFIGURATIONS_FILE_NAME))
-            .unwrap_or_else(|_| panic!("couldn't read file {}", CONFIGURATIONS_FILE_NAME)),
-    )
-    .lines()
-    .map(Result::unwrap)
-    .enumerate();
+    let lines = read_config_file_lines(CONFIGURATIONS_FILE_NAME).enumerate();
 
     for (idx, line) in lines {
         if let Some(capture) = tracking_issue.captures(&line) {
@@ -319,4 +315,22 @@ fn check_unstable_option_tracking_issue_numbers() {
             );
         }
     }
+}
+
+#[test]
+fn check_config_options_in_alphabetical_order() {
+    // Ensure the configs are listed in alphabetical order
+    let lines = read_config_file_lines(CONFIGURATIONS_FILE_NAME);
+    let configs: Vec<String> = lines
+        .filter_map(|s| s.strip_prefix("## ").map(str::to_owned))
+        .collect();
+
+    let mut sorted_configs = configs.clone();
+    sorted_configs.sort();
+
+    assert!(
+        configs == sorted_configs,
+        "configs listed in {} are not in alphabetical order.",
+        CONFIGURATIONS_FILE_NAME
+    );
 }
