@@ -1137,6 +1137,8 @@ where
 {
     base: MultiPeek<T>,
     status: CharClassesStatus,
+    doc_attr: bool,
+    in_attr: bool,
 }
 
 pub(crate) trait RichChar {
@@ -1181,6 +1183,9 @@ enum CharClassesStatus {
     BlockCommentClosing(u32),
     /// Character is within a line comment
     LineComment,
+    ///  Just the doc comment in #[doc = "......"]
+    ///                                   ^----^
+    DocAttributeComment,
 }
 
 /// Distinguish between functional part of code and comments
@@ -1215,6 +1220,12 @@ pub(crate) enum FullCodeCharKind {
     EndString,
     /// Inside a string.
     InString,
+    /// opening '"' in #[doc = "..." ]
+    StartDocComment,
+    /// closing '"' in #[doc = "..." ]
+    EndDocComment,
+    /// between the opening and closing '"' in a doc comment
+    InDocComment,
 }
 
 impl FullCodeCharKind {
@@ -1230,10 +1241,20 @@ impl FullCodeCharKind {
         }
     }
 
+    pub(crate) fn is_doc_attr_comment(self) -> bool {
+        match self {
+            FullCodeCharKind::StartDocComment
+            | FullCodeCharKind::EndDocComment
+            | FullCodeCharKind::InDocComment => true,
+            _ => false,
+        }
+    }
+
     /// Returns true if the character is inside a comment
     pub(crate) fn inside_comment(self) -> bool {
         match self {
             FullCodeCharKind::InComment
+            | FullCodeCharKind::InDocComment
             | FullCodeCharKind::StartStringCommented
             | FullCodeCharKind::InStringCommented
             | FullCodeCharKind::EndStringCommented => true,
@@ -1269,6 +1290,8 @@ where
         CharClasses {
             base: multipeek(base),
             status: CharClassesStatus::Normal,
+            doc_attr: false,
+            in_attr: false,
         }
     }
 }
@@ -1362,6 +1385,10 @@ where
                     }
                     _ => CharClassesStatus::Normal,
                 },
+                '"' if self.in_attr && self.doc_attr => {
+                    self.status = CharClassesStatus::DocAttributeComment;
+                    return Some((FullCodeCharKind::StartDocComment, item));
+                }
                 '"' => {
                     char_kind = FullCodeCharKind::InString;
                     CharClassesStatus::LitString
@@ -1392,6 +1419,50 @@ where
                     }
                     _ => CharClassesStatus::Normal,
                 },
+                '#' => match self.base.peek() {
+                    Some(next) if next.get_char() == '[' => {
+                        self.in_attr = true;
+                        CharClassesStatus::Normal
+                    }
+                    Some(next) if next.get_char() == '!' => match self.base.peek() {
+                        Some(next) if next.get_char() == '[' => {
+                            self.in_attr = true;
+                            CharClassesStatus::Normal
+                        }
+                        _ => CharClassesStatus::Normal,
+                    },
+                    _ => CharClassesStatus::Normal,
+                },
+                ']' if self.in_attr => {
+                    self.in_attr = false;
+                    CharClassesStatus::Normal
+                }
+                'd' if self.in_attr => {
+                    // check if this is a #[doc] attribute
+                    let mut all_matches = true;
+                    for c in ['o', 'c', ' '] {
+                        match self.base.peek() {
+                            Some(next) => {
+                                let next_char = next.get_char();
+                                if next_char != c {
+                                    // The final char could be an '=' instead of ' '. e.g 'doc='
+                                    if c == ' ' && next_char == '=' {
+                                        continue;
+                                    }
+                                    all_matches = false;
+                                }
+                            }
+                            None => {
+                                all_matches = false;
+                                break;
+                            }
+                        }
+                    }
+                    if all_matches {
+                        self.doc_attr = true
+                    }
+                    CharClassesStatus::Normal
+                }
                 _ => CharClassesStatus::Normal,
             },
             CharClassesStatus::StringInBlockComment(deepness) => {
@@ -1442,6 +1513,16 @@ where
                 _ => {
                     self.status = CharClassesStatus::LineComment;
                     return Some((FullCodeCharKind::InComment, item));
+                }
+            },
+            CharClassesStatus::DocAttributeComment => match chr {
+                '"' => {
+                    self.doc_attr = false;
+                    self.status = CharClassesStatus::Normal;
+                    return Some((FullCodeCharKind::EndDocComment, item));
+                }
+                _ => {
+                    return Some((FullCodeCharKind::InDocComment, item));
                 }
             },
         };
@@ -1537,13 +1618,13 @@ impl<'a> Iterator for UngroupedCommentCodeSlices<'a> {
             FullCodeCharKind::Normal | FullCodeCharKind::InString => {
                 // Consume all the Normal code
                 while let Some(&(char_kind, _)) = self.iter.peek() {
-                    if char_kind.is_comment() {
+                    if char_kind.is_comment() || char_kind.is_doc_attr_comment() {
                         break;
                     }
                     let _ = self.iter.next();
                 }
             }
-            FullCodeCharKind::StartComment => {
+            FullCodeCharKind::StartComment | FullCodeCharKind::StartDocComment => {
                 // Consume the whole comment
                 loop {
                     match self.iter.next() {
@@ -1559,7 +1640,7 @@ impl<'a> Iterator for UngroupedCommentCodeSlices<'a> {
             None => &self.slice[start_idx..],
         };
         Some((
-            if kind.is_comment() {
+            if kind.is_comment() || kind.is_doc_attr_comment() {
                 CodeCharKind::Comment
             } else {
                 CodeCharKind::Normal
@@ -1767,7 +1848,10 @@ impl<'a> Iterator for CommentReducer<'a> {
 }
 
 fn remove_comment_header(comment: &str) -> &str {
-    if comment.starts_with("///") || comment.starts_with("//!") {
+    // remove the leading and trailing '"' from A doc attribute comment `#[doc="..."]`
+    if comment.starts_with("\"") {
+        &comment[1..comment.len() - 1]
+    } else if comment.starts_with("///") || comment.starts_with("//!") {
         &comment[3..]
     } else if let Some(stripped) = comment.strip_prefix("//") {
         stripped

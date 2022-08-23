@@ -1,0 +1,19 @@
+// rustfmt-normalize_doc_attributes: true
+
+///...
+static S: () = {
+    ///...
+    struct S;
+};
+
+///...
+static S: () = {
+    ///...
+    struct S;
+};
+
+///...
+static S: () = {
+    ///...
+    struct S;
+};
