@@ -2,6 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use rustc_ast::{ast, token::Delimiter, visit};
+use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::sync::Lrc;
 use rustc_span::{symbol, BytePos, Pos, Span};
 
@@ -17,6 +18,7 @@ use crate::items::{
 use crate::macros::{macro_style, rewrite_macro, rewrite_macro_def, MacroPosition};
 use crate::modules::Module;
 use crate::parse::session::ParseSess;
+use crate::rewrite::QueryId;
 use crate::rewrite::{Rewrite, RewriteContext};
 use crate::shape::{Indent, Shape};
 use crate::skip::{is_skip_attr, SkipContext};
@@ -87,6 +89,7 @@ pub(crate) struct FmtVisitor<'a> {
     pub(crate) report: FormatReport,
     pub(crate) skip_context: SkipContext,
     pub(crate) is_macro_def: bool,
+    pub(crate) memoize: Rc<RefCell<FxHashMap<QueryId, Option<String>>>>,
 }
 
 impl<'a> Drop for FmtVisitor<'a> {
@@ -794,6 +797,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
             macro_rewrite_failure: false,
             report,
             skip_context,
+            memoize: Rc::new(RefCell::new(FxHashMap::default())),
         }
     }
 
@@ -1014,6 +1018,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
             report: self.report.clone(),
             skip_context: self.skip_context.clone(),
             skipped_range: self.skipped_range.clone(),
+            memoize: self.memoize.clone(),
         }
     }
 }

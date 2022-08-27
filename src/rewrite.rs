@@ -4,6 +4,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use rustc_ast::ptr;
+use rustc_data_structures::fx::FxHashMap;
 use rustc_span::Span;
 
 use crate::config::{Config, IndentStyle};
@@ -21,6 +22,18 @@ pub(crate) trait Rewrite {
 impl<T: Rewrite> Rewrite for ptr::P<T> {
     fn rewrite(&self, context: &RewriteContext<'_>, shape: Shape) -> Option<String> {
         (**self).rewrite(context, shape)
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub(crate) struct QueryId {
+    pub(crate) shape: Shape,
+    pub(crate) span: Span,
+}
+
+impl QueryId {
+    pub(crate) fn new(shape: Shape, span: Span) -> Self {
+        Self { shape, span }
     }
 }
 
@@ -43,6 +56,7 @@ pub(crate) struct RewriteContext<'a> {
     pub(crate) report: FormatReport,
     pub(crate) skip_context: SkipContext,
     pub(crate) skipped_range: Rc<RefCell<Vec<(usize, usize)>>>,
+    pub(crate) memoize: Rc<RefCell<FxHashMap<QueryId, Option<String>>>>,
 }
 
 pub(crate) struct InsideMacroGuard {

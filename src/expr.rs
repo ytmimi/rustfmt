@@ -22,7 +22,7 @@ use crate::macros::{rewrite_macro, MacroPosition};
 use crate::matches::rewrite_match;
 use crate::overflow::{self, IntoOverflowableItem, OverflowableItem};
 use crate::pairs::{rewrite_all_pairs, rewrite_pair, PairParts};
-use crate::rewrite::{Rewrite, RewriteContext};
+use crate::rewrite::{QueryId, Rewrite, RewriteContext};
 use crate::shape::{Indent, Shape};
 use crate::source_map::{LineRangeUtils, SpanUtils};
 use crate::spanned::Spanned;
@@ -49,6 +49,32 @@ pub(crate) enum ExprType {
 }
 
 pub(crate) fn format_expr(
+    expr: &ast::Expr,
+    expr_type: ExprType,
+    context: &RewriteContext<'_>,
+    shape: Shape,
+) -> Option<String> {
+    if context.inside_macro() || context.is_macro_def {
+        // span ids are not unique in macros, so we don't memoize result of them.
+        return format_expr_inner(expr, expr_type, context, shape);
+    }
+
+    let query_id = QueryId::new(shape, expr.span);
+    match context.memoize.borrow().get(&query_id) {
+        Some(rewrite) => return rewrite.clone(),
+        _ => {}
+    }
+
+    let rewrite = format_expr_inner(expr, expr_type, context, shape);
+
+    if rewrite.is_none() {
+        context.memoize.borrow_mut().insert(query_id, rewrite);
+        return None;
+    }
+    rewrite
+}
+
+pub(crate) fn format_expr_inner(
     expr: &ast::Expr,
     expr_type: ExprType,
     context: &RewriteContext<'_>,
