@@ -25,12 +25,12 @@ use crate::comment::{
     contains_comment, CharClasses, FindUncommented, FullCodeCharKind, LineClasses,
 };
 use crate::config::lists::*;
-use crate::expr::{rewrite_array, rewrite_assign_rhs, RhsAssignKind};
+use crate::expr::{choose_separator_tactic, rewrite_array, rewrite_assign_rhs, RhsAssignKind};
 use crate::lists::{itemize_list, write_list, ListFormatting};
 use crate::matches::rewrite_guard;
 use crate::overflow;
 use crate::parse::macros::lazy_static::parse_lazy_static;
-use crate::parse::macros::matches::MatchesMacroItem;
+use crate::parse::macros::matches::{parse_matches, MatchesMacroItem};
 use crate::parse::macros::{parse_expr, parse_macro_args, ParsedMacroArgs};
 use crate::rewrite::{Rewrite, RewriteContext};
 use crate::shape::{Indent, Shape};
@@ -230,6 +230,10 @@ fn rewrite_macro_inner(
     // Format well-known macros which cannot be parsed as a valid AST.
     if macro_name == "lazy_static!" && !has_comment {
         if let success @ Some(..) = format_lazy_static(context, shape, ts.clone()) {
+            return success;
+        }
+    } else if macro_name == "matches!" {
+        if let success @ Some(..) = format_matches(context, shape, &macro_name, mac) {
             return success;
         }
     }
@@ -1325,6 +1329,46 @@ impl Rewrite for MatchesMacroItem {
                 Some(pats_str + &guard_str)
             }
         }
+    }
+}
+
+/// Format `matches!` from <https://doc.rust-lang.org/std/macro.matches.html>
+///
+/// # Expected syntax
+///
+/// ```text
+/// matches!(expr, pat)
+/// matches!(expr, pat if expr)
+/// ```
+fn format_matches(
+    context: &RewriteContext<'_>,
+    shape: Shape,
+    name: &str,
+    mac: &ast::MacCall,
+) -> Option<String> {
+    let span = mac.span();
+    let matches = parse_matches(context, mac.args.tokens.clone())?.items();
+    let force_separator_tactic = choose_separator_tactic(context, span);
+    match mac.args.delim {
+        ast::MacDelimiter::Parenthesis => overflow::rewrite_with_parens(
+            context,
+            name,
+            matches.iter(),
+            shape,
+            span,
+            shape.width,
+            force_separator_tactic,
+        ),
+        ast::MacDelimiter::Bracket => overflow::rewrite_with_square_brackets(
+            context,
+            name,
+            matches.iter(),
+            shape,
+            span,
+            force_separator_tactic,
+            None,
+        ),
+        ast::MacDelimiter::Brace => None,
     }
 }
 
