@@ -13,6 +13,7 @@ use crate::rewrite::RewriteContext;
 pub(crate) mod asm;
 pub(crate) mod cfg_if;
 pub(crate) mod lazy_static;
+pub(crate) mod matches;
 
 fn build_stream_parser<'a>(sess: &'a ParseSess, tokens: TokenStream) -> Parser<'a> {
     stream_to_parser(sess, tokens, MACRO_ARGUMENTS)
