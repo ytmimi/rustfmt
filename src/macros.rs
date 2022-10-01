@@ -591,15 +591,12 @@ impl MacroArgKind {
         matches!(
             *self,
             MacroArgKind::Repeat(Delimiter::Brace, _, _, _)
-                | MacroArgKind::Delimited(Delimiter::Brace, _)
+            | MacroArgKind::Delimited(Delimiter::Brace, _)
         )
     }
 
     fn starts_with_dollar(&self) -> bool {
-        matches!(
-            *self,
-            MacroArgKind::Repeat(..) | MacroArgKind::MetaVariable(..)
-        )
+        matches!(*self, MacroArgKind::Repeat(..) | MacroArgKind::MetaVariable(..))
     }
 
     fn ends_with_space(&self) -> bool {
@@ -1052,10 +1049,7 @@ fn force_space_before(tok: &TokenKind) -> bool {
 }
 
 fn ident_like(tok: &Token) -> bool {
-    matches!(
-        tok.kind,
-        TokenKind::Ident(..) | TokenKind::Literal(..) | TokenKind::Lifetime(_)
-    )
+    matches!(tok.kind, TokenKind::Ident(..) | TokenKind::Literal(..) | TokenKind::Lifetime(_))
 }
 
 fn next_space(tok: &TokenKind) -> SpaceState {

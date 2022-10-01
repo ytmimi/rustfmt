@@ -1891,9 +1891,9 @@ impl<'ast> RhsAssignKind<'ast> {
                 matches!(
                     kind,
                     ast::ExprKind::Try(..)
-                        | ast::ExprKind::Field(..)
-                        | ast::ExprKind::MethodCall(..)
-                        | ast::ExprKind::Await(_)
+                    | ast::ExprKind::Field(..)
+                    | ast::ExprKind::MethodCall(..)
+                    | ast::ExprKind::Await(_)
                 )
             }
             _ => false,

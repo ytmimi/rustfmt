@@ -141,8 +141,8 @@ impl<'a> OverflowableItem<'a> {
         matches!(
             self,
             OverflowableItem::Expr(..)
-                | OverflowableItem::MacroArg(MacroArg::Expr(..))
-                | OverflowableItem::MatchesMacroItem(MatchesMacroItem::Expr(..))
+            | OverflowableItem::MacroArg(MacroArg::Expr(..))
+            | OverflowableItem::MatchesMacroItem(MatchesMacroItem::Expr(..))
         )
     }
 
