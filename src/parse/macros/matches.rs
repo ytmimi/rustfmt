@@ -52,3 +52,18 @@ pub(crate) fn parse_matches(context: &RewriteContext<'_>, ts: TokenStream) -> Op
     };
     Some(Matches { expr, pat, guard })
 }
+
+impl Matches {
+    pub(crate) fn items(self) -> [MatchesMacroItem; 2] {
+        [
+            MatchesMacroItem::Expr(self.expr),
+            MatchesMacroItem::Arm(self.pat, self.guard),
+        ]
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum MatchesMacroItem {
+    Expr(P<ast::Expr>),
+    Arm(P<ast::Pat>, Option<P<ast::Expr>>),
+}

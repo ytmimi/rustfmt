@@ -27,8 +27,10 @@ use crate::comment::{
 use crate::config::lists::*;
 use crate::expr::{rewrite_array, rewrite_assign_rhs, RhsAssignKind};
 use crate::lists::{itemize_list, write_list, ListFormatting};
+use crate::matches::rewrite_guard;
 use crate::overflow;
 use crate::parse::macros::lazy_static::parse_lazy_static;
+use crate::parse::macros::matches::MatchesMacroItem;
 use crate::parse::macros::{parse_expr, parse_macro_args, ParsedMacroArgs};
 use crate::rewrite::{Rewrite, RewriteContext};
 use crate::shape::{Indent, Shape};
@@ -1310,6 +1312,19 @@ impl MacroBranch {
         result += "}";
 
         Some(result)
+    }
+}
+
+impl Rewrite for MatchesMacroItem {
+    fn rewrite(&self, context: &RewriteContext<'_>, shape: crate::shape::Shape) -> Option<String> {
+        match self {
+            Self::Expr(expr) => expr.rewrite(context, shape),
+            Self::Arm(pat, guard) => {
+                let pats_str = pat.rewrite(context, shape)?;
+                let guard_str = rewrite_guard(context, guard, shape, &pats_str)?;
+                Some(pats_str + &guard_str)
+            }
+        }
     }
 }
 
