@@ -24,7 +24,7 @@ use rustc_span::{
 use crate::comment::{
     contains_comment, CharClasses, FindUncommented, FullCodeCharKind, LineClasses,
 };
-use crate::config::lists::*;
+use crate::config::{lists::*, Version};
 use crate::expr::{choose_separator_tactic, rewrite_array, rewrite_assign_rhs, RhsAssignKind};
 use crate::lists::{itemize_list, write_list, ListFormatting};
 use crate::matches::rewrite_guard;
@@ -232,7 +232,7 @@ fn rewrite_macro_inner(
         if let success @ Some(..) = format_lazy_static(context, shape, ts.clone()) {
             return success;
         }
-    } else if macro_name == "matches!" {
+    } else if macro_name == "matches!" && context.config.version() == Version::Two {
         if let success @ Some(..) = format_matches(context, shape, &macro_name, mac) {
             return success;
         }
