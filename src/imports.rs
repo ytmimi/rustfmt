@@ -208,6 +208,40 @@ impl UseSegment {
             false
         }
     }
+
+    fn single_line_len(&self) -> usize {
+        match &self.kind {
+            UseSegmentKind::Ident(ident, alias) => {
+                if let Some(alias) = alias {
+                    // 4 = " as "
+                    ident.len() + 4 + alias.len()
+                } else {
+                    ident.len()
+                }
+            }
+            UseSegmentKind::Slf(_) => "self".len(),
+            UseSegmentKind::Super(_) => "super".len(),
+            UseSegmentKind::Crate(_) => "crate".len(),
+            UseSegmentKind::Glob => "*".len(),
+            UseSegmentKind::List(list) => {
+                // start with 2 for the opening and closing braces '{' '}'
+                let mut length = 2;
+
+                if list.is_empty() {
+                    return length;
+                }
+
+                for (i, tree) in list.iter().enumerate() {
+                    if i != 0 {
+                        // 2 = ", " between items
+                        length += 2
+                    }
+                    length += tree.single_line_len()
+                }
+                length
+            }
+        }
+    }
 }
 
 pub(crate) fn normalize_use_trees_with_granularity(
@@ -735,6 +769,61 @@ impl UseTree {
             self.path.push(UseSegment { kind, version });
         }
         self
+    }
+
+    /// Calculate the length of this import if it were to be formatted on a single line.
+    fn single_line_len(&self) -> usize {
+        let mut length = 0;
+        for (i, segment) in self.path.iter().enumerate() {
+            if i != 0 {
+                // 2 = ::
+                length += 2;
+            }
+            length += segment.single_line_len()
+        }
+        length
+    }
+
+    // Calculate the length of the common prefix of both imports
+    //
+    // For example, if self is `a::b::c` and other is `a::b::d` then the common prefix is `a::b::`.
+    fn single_line_common_prefix_len(&self, other: &UseTree) -> usize {
+        let mut length = 0;
+        for (segment, _) in self
+            .path
+            .iter()
+            .zip(&other.path)
+            .take_while(|(this_segment, other_segment)| this_segment == other_segment)
+        {
+            // 2 = "::"
+            length += segment.single_line_len() + 2;
+        }
+        length
+    }
+
+    /// Calculate the hypothetical single line lenght if `other` would be merged into `self`.
+    /// The assumption is that other has already been flattened.
+    fn single_line_merged_len(&self, other: &UseTree) -> usize {
+        // the import is just made up of identifiers `a::b::c`
+        let is_path_import = self
+            .path
+            .iter()
+            .all(|segment| !matches!(segment.kind, UseSegmentKind::List(_) | UseSegmentKind::Glob));
+
+        let overhead = if is_path_import {
+            // if self is `a::b::c` and other is `a::b::d` -> `a::b::{c, d}`,
+            // which means we added 4 characters `{, }` to the import.
+            4
+        } else {
+            //If self is `a::b::{c, d}` and other is `a::b::e` -> `a::b::{c, d, e}`
+            // which means we added 2 characters ", " to the import.
+            2
+        };
+
+        let current_len = self.single_line_len();
+        let other_len = other.single_line_len();
+        let common_len = self.single_line_common_prefix_len(other);
+        current_len + other_len - common_len + overhead
     }
 }
 
