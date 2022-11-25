@@ -107,9 +107,14 @@ fn rewrite_reorderable_or_regroupable_items(
             for (item, list_item) in normalized_items.iter_mut().zip(list_items) {
                 item.list_item = Some(list_item.clone());
             }
+
+            // 4 = "use ", 1 = ";"
+            let nested_shape = shape.offset_left(4)?.sub_width(1)?;
+
             normalized_items = normalize_use_trees_with_granularity(
                 normalized_items,
                 context.config.imports_granularity(),
+                nested_shape.width,
             );
 
             let mut regrouped_items = match context.config.group_imports() {
@@ -123,9 +128,7 @@ fn rewrite_reorderable_or_regroupable_items(
                 regrouped_items.iter_mut().for_each(|items| items.sort())
             }
 
-            // 4 = "use ", 1 = ";"
-            let nested_shape = shape.offset_left(4)?.sub_width(1)?;
-            let item_vec: Vec<_> = regrouped_items
+            let item_vec = regrouped_items
                 .into_iter()
                 .filter(|use_group| !use_group.is_empty())
                 .map(|use_group| {

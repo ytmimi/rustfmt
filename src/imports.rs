@@ -247,6 +247,7 @@ impl UseSegment {
 pub(crate) fn normalize_use_trees_with_granularity(
     use_trees: Vec<UseTree>,
     import_granularity: ImportGranularity,
+    single_line_len: usize,
 ) -> Vec<UseTree> {
     let merge_by = match import_granularity {
         ImportGranularity::Item => return flatten_use_trees(use_trees, ImportGranularity::Item),
@@ -266,16 +267,26 @@ pub(crate) fn normalize_use_trees_with_granularity(
         for mut flattened in use_tree.flatten(import_granularity) {
             if let Some(tree) = result
                 .iter_mut()
-                .find(|tree| tree.share_prefix(&flattened, merge_by))
+                .rfind(|tree| tree.share_prefix(&flattened, merge_by))
             {
-                tree.merge(&flattened, merge_by);
-            } else {
-                // If this is the first tree with this prefix, handle potential trailing ::self
-                if merge_by == SharedPrefix::Module {
-                    flattened = flattened.nest_trailing_self();
+                let should_merge = match import_granularity {
+                    ImportGranularity::ModuleSingleLine => {
+                        tree.single_line_merged_len(&flattened) <= single_line_len
+                    }
+                    _ => true,
+                };
+
+                if should_merge {
+                    tree.merge(&flattened, merge_by);
+                    continue;
                 }
-                result.push(flattened);
             }
+
+            // we aren't merging these imports push a new UseTree onto the result stack
+            if merge_by == SharedPrefix::Module {
+                flattened = flattened.nest_trailing_self();
+            }
+            result.push(flattened);
         }
     }
     result
@@ -1354,6 +1365,9 @@ mod test {
                 normalize_use_trees_with_granularity(
                     parse_use_trees!($($input,)*),
                     ImportGranularity::$by,
+                     // default max_width - `use ` - `;` = 95
+                     //      100          -   4    -  1  = 95
+                    95,
                 ),
                 parse_use_trees!($($output,)*),
             );
