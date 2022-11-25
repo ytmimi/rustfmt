@@ -125,6 +125,9 @@ pub enum ImportGranularity {
     Crate,
     /// Use one `use` statement per module.
     Module,
+    /// Use multiple `use` statement per module if the import list is long, making sure to
+    /// format each import list on a single line.
+    ModuleSingleLine,
     /// Use one `use` statement per imported item.
     Item,
     /// Use one `use` statement including all items.

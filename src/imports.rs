@@ -252,7 +252,7 @@ pub(crate) fn normalize_use_trees_with_granularity(
         ImportGranularity::Item => return flatten_use_trees(use_trees, ImportGranularity::Item),
         ImportGranularity::Preserve => return use_trees,
         ImportGranularity::Crate => SharedPrefix::Crate,
-        ImportGranularity::Module => SharedPrefix::Module,
+        ImportGranularity::Module | ImportGranularity::ModuleSingleLine => SharedPrefix::Module,
         ImportGranularity::One => SharedPrefix::One,
     };
 
