@@ -1371,7 +1371,17 @@ mod test {
                 ),
                 parse_use_trees!($($output,)*),
             );
-        }
+        };
+        ($by:ident, $len:expr, [$($input:expr),* $(,)*], [$($output:expr),* $(,)*]) => {
+            assert_eq!(
+                normalize_use_trees_with_granularity(
+                    parse_use_trees!($($input,)*),
+                    ImportGranularity::$by,
+                    $len,
+                ),
+                parse_use_trees!($($output,)*),
+            );
+        };
     }
 
     #[test]
@@ -1428,6 +1438,65 @@ mod test {
             Module,
             ["foo::{a::b, a::c, d::e, d::f}"],
             ["foo::a::{b, c}", "foo::d::{e, f}"]
+        );
+    }
+
+    #[test]
+    fn test_use_tree_single_line_len() {
+        let tree = parse_use_tree("a::b::c");
+        assert_eq!(tree.single_line_len(), 7);
+
+        let tree = parse_use_tree("a::b::{c, d, e}");
+        assert_eq!(tree.single_line_len(), 15);
+    }
+
+    #[test]
+    fn test_use_tree_single_line_common_prefix_len() {
+        let tree1 = parse_use_tree("a::b::c");
+        let tree2 = parse_use_tree("a::b::{d, e}");
+        // 6 = "a::b::"
+        assert_eq!(tree1.single_line_common_prefix_len(&tree2), 6)
+    }
+
+    #[test]
+    fn test_use_tree_single_line_merged_len() {
+        let tree1 = parse_use_tree("a::b::c");
+        let mut tree2 = parse_use_tree("a::b::{d, e}");
+        let merge = parse_use_tree("a::b::{c, d, e}");
+
+        tree2.merge(&tree1, SharedPrefix::Module);
+        assert_eq!(tree2.single_line_len() , merge.single_line_len());
+        assert_eq!(tree2 , merge);
+    }
+
+    #[test]
+    fn test_use_tree_merge_module_single_line() {
+        test_merge!(
+            ModuleSingleLine,
+            50,
+            [
+                "foo::bar::baz::bbbbb",
+                "foo::bar::baz::{ggggg, ccccc}",
+                "foo::bar::baz::{fffff, aaaaa, hhhhh, iiiii, jjjjj}"
+            ],
+            [
+                "foo::bar::baz::{aaaaa, bbbbb, ccccc, fffff, ggggg}",
+                "foo::bar::baz::{hhhhh, iiiii, jjjjj}"
+            ]
+        );
+
+        test_merge!(
+            ModuleSingleLine,
+            50,
+            [
+                "foo::bar::baz::{aaaaa::bbbbb, ddddd::ddddd, ddddd::eeeee, ddddd::fffff}",
+                "foo::bar::baz::{aaaaa::ccccc, aaaaa::xxxxx, aaaaa::yyyyy, aaaaa::zzzzz}",
+            ],
+            [
+                "foo::bar::baz::aaaaa::{bbbbb, ccccc, xxxxx, yyyyy}",
+                "foo::bar::baz::ddddd::{ddddd, eeeee, fffff}",
+                "foo::bar::baz::aaaaa::zzzzz"
+            ]
         );
     }
 
