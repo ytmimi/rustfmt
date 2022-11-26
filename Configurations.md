@@ -1904,6 +1904,15 @@ use foo::{a, b, c};
 use qux::{h, i};
 ```
 
+#### `ModuleSingleLine`:
+
+Merge long import lists from the same module into multiple `use` statements, ensuring that each import list is formatted on a single line.
+
+```rust
+use crate::ast::{self, AttrArgs, AttrArgsEq, AttrId, AttrItem, AttrKind, AttrStyle, Attribute};
+use crate::ast::{DelimArgs, Lit, LitKind, MacDelimiter, MetaItem, MetaItemKind, NestedMetaItem};
+```
+
 #### `Item`:
 
 Flatten imports so that each has its own `use` statement.
