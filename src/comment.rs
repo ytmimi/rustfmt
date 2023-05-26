@@ -17,6 +17,8 @@ use crate::utils::{
 };
 use crate::{ErrorKind, FormattingError};
 
+const SKIP_DOC_COMMENT_MARKER: &'static str = "<!--- rustfmt::skip --->";
+
 lazy_static! {
     /// A regex matching reference doc links.
     ///
@@ -254,6 +256,9 @@ pub(crate) fn combine_strs_with_missing_comments(
 }
 
 pub(crate) fn rewrite_doc_comment(orig: &str, shape: Shape, config: &Config) -> Option<String> {
+    if orig.contains(SKIP_DOC_COMMENT_MARKER) {
+        return Some(orig.to_string());
+    }
     identify_comment(orig, false, shape, config, true)
 }
 
