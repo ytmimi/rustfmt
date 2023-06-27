@@ -130,17 +130,26 @@ fn format_derive(
         .sub_width("()]".len())?;
     let one_line_budget = one_line_shape.width;
 
-    let tactic = definitive_tactic(
-        &all_items,
-        ListTactic::HorizontalVertical,
-        Separator::Comma,
-        argument_shape.width,
-    );
     let trailing_separator = match context.config.indent_style() {
         // We always add the trailing comma and remove it if it is not needed.
         IndentStyle::Block => SeparatorTactic::Always,
         IndentStyle::Visual => SeparatorTactic::Never,
     };
+
+    let include_trailing_separator = trailing_separator == SeparatorTactic::Always
+        || SeparatorTactic::Always == context.config.trailing_comma();
+
+    let tactic = definitive_tactic(
+        &all_items,
+        ListTactic::HorizontalVertical,
+        Separator::Comma,
+        if include_trailing_separator {
+            // -1 to account for the trailing comma
+            argument_shape.width - 1
+        } else {
+            argument_shape.width
+        },
+    );
 
     // Format the collection of items.
     let fmt = ListFormatting::new(argument_shape, context.config)
