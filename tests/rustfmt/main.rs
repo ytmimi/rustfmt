@@ -1,5 +1,8 @@
 //! Integration tests for rustfmt.
 
+/// UI tests for rustfmt that verify the stdout / stderr output
+mod ui;
+
 use std::env;
 use std::fs::remove_file;
 use std::path::Path;

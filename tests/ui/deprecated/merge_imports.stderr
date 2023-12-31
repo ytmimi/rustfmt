@@ -1,0 +1,1 @@
+Warning: the `merge_imports` option is deprecated. Use `imports_granularity="Crate"` instead
