@@ -13,6 +13,7 @@ use crate::config::{Color, Config, EmitMode, FileName, NewlineStyle};
 use crate::formatting::{ReportedErrors, SourceFile};
 use crate::rustfmt_diff::{make_diff, print_diff, DiffLine, Mismatch, ModifiedChunk, OutputWriter};
 use crate::source_file;
+use crate::test_helpers::{get_test_files, read_significant_comments};
 use crate::{is_nightly_channel, FormatReport, FormatReportFormatterBuilder, Input, Session};
 
 use rustfmt_config_proc_macro::nightly_only_test;
@@ -74,47 +75,6 @@ where
         .expect("Failed to create a test thread")
         .join()
         .expect("Failed to join a test thread")
-}
-
-fn is_subpath<P>(path: &Path, subpath: &P) -> bool
-where
-    P: AsRef<Path>,
-{
-    (0..path.components().count())
-        .map(|i| {
-            path.components()
-                .skip(i)
-                .take(subpath.as_ref().components().count())
-        })
-        .any(|c| c.zip(subpath.as_ref().components()).all(|(a, b)| a == b))
-}
-
-fn is_file_skip(path: &Path) -> bool {
-    FILE_SKIP_LIST
-        .iter()
-        .any(|file_path| is_subpath(path, file_path))
-}
-
-// Returns a `Vec` containing `PathBuf`s of files with an  `rs` extension in the
-// given path. The `recursive` argument controls if files from subdirectories
-// are also returned.
-fn get_test_files(path: &Path, recursive: bool) -> Vec<PathBuf> {
-    let mut files = vec![];
-    if path.is_dir() {
-        for entry in fs::read_dir(path).expect(&format!(
-            "couldn't read directory {}",
-            path.to_str().unwrap()
-        )) {
-            let entry = entry.expect("couldn't get `DirEntry`");
-            let path = entry.path();
-            if path.is_dir() && recursive {
-                files.append(&mut get_test_files(&path, recursive));
-            } else if path.extension().map_or(false, |f| f == "rs") && !is_file_skip(&path) {
-                files.push(path);
-            }
-        }
-    }
-    files
 }
 
 fn verify_config_used(path: &Path, config_name: &str) {
@@ -181,7 +141,7 @@ fn system_tests() {
     init_log();
     run_test_with(&TestSetting::default(), || {
         // Get all files in the tests/source directory.
-        let files = get_test_files(Path::new("tests/source"), true);
+        let files = get_test_files(Path::new("tests/source"), true, FILE_SKIP_LIST);
         let (_reports, count, fails) = check_files(files, &None);
 
         // Display results.
@@ -200,7 +160,7 @@ fn system_tests() {
 #[test]
 fn coverage_tests() {
     init_log();
-    let files = get_test_files(Path::new("tests/coverage/source"), true);
+    let files = get_test_files(Path::new("tests/coverage/source"), true, FILE_SKIP_LIST);
     let (_reports, count, fails) = check_files(files, &None);
 
     println!("Ran {count} tests in coverage mode.");
@@ -361,7 +321,7 @@ fn idempotence_tests() {
     init_log();
     run_test_with(&TestSetting::default(), || {
         // Get all files in the tests/target directory.
-        let files = get_test_files(Path::new("tests/target"), true);
+        let files = get_test_files(Path::new("tests/target"), true, FILE_SKIP_LIST);
         let (_reports, count, fails) = check_files(files, &None);
 
         // Display results.
@@ -382,7 +342,7 @@ fn idempotence_tests() {
 #[test]
 fn self_tests() {
     init_log();
-    let mut files = get_test_files(Path::new("tests"), false);
+    let mut files = get_test_files(Path::new("tests"), false, FILE_SKIP_LIST);
     let bin_directories = vec!["cargo-fmt", "git-rustfmt", "bin", "format-diff"];
     for dir in bin_directories {
         let mut path = PathBuf::from("src");
@@ -777,41 +737,6 @@ fn get_config(config_file: Option<&Path>) -> Config {
         .expect("Couldn't read config");
 
     Config::from_toml(&def_config, Path::new("tests/config/")).expect("invalid TOML")
-}
-
-// Reads significant comments of the form: `// rustfmt-key: value` into a hash map.
-fn read_significant_comments(file_name: &Path) -> HashMap<String, String> {
-    let file = fs::File::open(file_name)
-        .unwrap_or_else(|_| panic!("couldn't read file {}", file_name.display()));
-    let reader = BufReader::new(file);
-    let pattern = r"^\s*//\s*rustfmt-([^:]+):\s*(\S+)";
-    let regex = regex::Regex::new(pattern).expect("failed creating pattern 1");
-
-    // Matches lines containing significant comments or whitespace.
-    let line_regex = regex::Regex::new(r"(^\s*$)|(^\s*//\s*rustfmt-[^:]+:\s*\S+)")
-        .expect("failed creating pattern 2");
-
-    reader
-        .lines()
-        .map(|line| line.expect("failed getting line"))
-        .filter(|line| line_regex.is_match(line))
-        .filter_map(|line| {
-            regex.captures_iter(&line).next().map(|capture| {
-                (
-                    capture
-                        .get(1)
-                        .expect("couldn't unwrap capture")
-                        .as_str()
-                        .to_owned(),
-                    capture
-                        .get(2)
-                        .expect("couldn't unwrap capture")
-                        .as_str()
-                        .to_owned(),
-                )
-            })
-        })
-        .collect()
 }
 
 // Compares output to input.

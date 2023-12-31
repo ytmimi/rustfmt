@@ -96,6 +96,7 @@ mod stmt;
 mod string;
 #[cfg(test)]
 mod test;
+pub mod test_helpers;
 mod types;
 mod vertical;
 pub(crate) mod visitor;
