@@ -120,12 +120,17 @@ impl<'a> Display for FormatReportFormatter<'a> {
 }
 
 fn slice_annotation(error: &FormattingError) -> Option<SourceAnnotation<'_>> {
-    let (range_start, range_length) = error.format_len();
-    let range_end = range_start + range_length;
+    let (range_start, range_end) = error.format_len();
 
-    if range_length > 0 {
+    if range_start < range_end {
         Some(SourceAnnotation {
             annotation_type: AnnotationType::Error,
+            // It's very important that these are character positions into the string we want to
+            // annotate. The `format_body` function will panic! if it's given a `range_end` that's
+            // larger than the number of chars in the string.
+            // **Note long URL broken up over multiple lines**
+            // See: <https://github.com/rust-lang/annotate-snippets-rs/blob/
+            // 77bd1c8e03466ff290c15dc025eac13088c244ee/src/display_list/from_snippet.rs#L272-L290>
             range: (range_start, range_end),
             label: "",
         })
@@ -136,7 +141,7 @@ fn slice_annotation(error: &FormattingError) -> Option<SourceAnnotation<'_>> {
 
 fn error_kind_to_snippet_annotation_type(error_kind: &ErrorKind) -> AnnotationType {
     match error_kind {
-        ErrorKind::LineOverflow(..)
+        ErrorKind::LineOverflow { .. }
         | ErrorKind::TrailingWhitespace
         | ErrorKind::IoError(_)
         | ErrorKind::ModuleResolutionError(_)

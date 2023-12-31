@@ -333,7 +333,7 @@ impl FormattingError {
 
     pub(crate) fn is_internal(&self) -> bool {
         match self.kind {
-            ErrorKind::LineOverflow(..)
+            ErrorKind::LineOverflow { .. }
             | ErrorKind::TrailingWhitespace
             | ErrorKind::IoError(_)
             | ErrorKind::ParseError
@@ -351,23 +351,28 @@ impl FormattingError {
         }
     }
 
-    // (space, target)
+    /// returns (`start`, `end`) where `start` and `end` are character positions in
+    /// `self.line_buffer.char_indices()`. These character positions will eventually be used to
+    /// construct the `annotate_snippets::snippet::SourceAnnotation` in
+    /// `format_report_formatter::slice_annotation`
     pub(crate) fn format_len(&self) -> (usize, usize) {
+        let char_count = self.line_buffer.chars().count();
         match self.kind {
-            ErrorKind::LineOverflow(found, max) => (max, found - max),
+            ErrorKind::LineOverflow { char_offset, .. } => (char_offset, char_count),
             ErrorKind::TrailingWhitespace
             | ErrorKind::DeprecatedAttr
             | ErrorKind::BadAttr
             | ErrorKind::LostComment => {
                 let trailing_ws_start = self
                     .line_buffer
-                    .rfind(|c: char| !c.is_whitespace())
-                    .map(|pos| pos + 1)
+                    .char_indices()
+                    .rev()
+                    .skip_while(|(_, c)| c.is_whitespace())
+                    .map(|(position, _)| position + 1)
+                    .next()
                     .unwrap_or(0);
-                (
-                    trailing_ws_start,
-                    self.line_buffer.len() - trailing_ws_start,
-                )
+
+                (trailing_ws_start, char_count)
             }
             _ => unreachable!(),
         }
@@ -501,6 +506,9 @@ struct FormatLines<'a> {
     name: &'a FileName,
     skipped_range: &'a [(usize, usize)],
     last_was_space: bool,
+    /// Number of chars in the line_buffer that fit within the max_width.
+    /// Used to report max_width issues.
+    max_width_char_position: usize,
     line_len: usize,
     cur_line: usize,
     newline_count: usize,
@@ -521,6 +529,7 @@ impl<'a> FormatLines<'a> {
             name,
             skipped_range,
             last_was_space: false,
+            max_width_char_position: 0,
             line_len: 0,
             cur_line: 1,
             newline_count: 0,
@@ -564,7 +573,11 @@ impl<'a> FormatLines<'a> {
             }
 
             // Check for any line width errors we couldn't correct.
-            let error_kind = ErrorKind::LineOverflow(self.line_len, self.config.max_width());
+            let error_kind = ErrorKind::LineOverflow {
+                char_offset: self.max_width_char_position,
+                configured_max_width: self.config.max_width(),
+                line_display_width: self.line_len,
+            };
             if self.line_len > self.config.max_width()
                 && !self.is_skipped_line()
                 && self.should_report_error(kind, &error_kind)
@@ -574,6 +587,7 @@ impl<'a> FormatLines<'a> {
             }
         }
 
+        self.max_width_char_position = 0;
         self.line_len = 0;
         self.cur_line += 1;
         self.format_line = self
@@ -587,6 +601,12 @@ impl<'a> FormatLines<'a> {
     }
 
     fn char(&mut self, c: char, kind: FullCodeCharKind) {
+        // Because of tabs and unicode characters that sometimes have a display width > 1
+        // the line_len won't necessarily align with the character position that caused the
+        // string to exceed the `max_width`.
+        if self.line_len < self.config.max_width() {
+            self.max_width_char_position += 1;
+        }
         self.newline_count = 0;
         self.line_len += if c == '\t' {
             self.config.tab_spaces()
@@ -621,7 +641,7 @@ impl<'a> FormatLines<'a> {
         };
 
         match error_kind {
-            ErrorKind::LineOverflow(..) => {
+            ErrorKind::LineOverflow { .. } => {
                 self.config.error_on_line_overflow() && allow_error_report
             }
             ErrorKind::TrailingWhitespace | ErrorKind::LostComment => allow_error_report,

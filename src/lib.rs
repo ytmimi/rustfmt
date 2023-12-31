@@ -107,9 +107,19 @@ pub enum ErrorKind {
     /// Line has exceeded character limit (found, maximum).
     #[error(
         "line formatted, but exceeded maximum width \
-         (maximum: {1} (see `max_width` option), found: {0})"
+         (maximum: {configured_max_width} (see `max_width` option), found: {line_display_width})"
     )]
-    LineOverflow(usize, usize),
+    LineOverflow {
+        /// The first character position that overflowed the max_width. This is not necessarily a
+        /// byte offset into the overflowing line. Instead this represents the `nth` char into
+        /// the string's `std::str::Chars` iterator.
+        char_offset: usize,
+        /// The `max_width` value used by rustfmt.
+        configured_max_width: usize,
+        /// The dispaly width of the overflowing line. Because of tabs and the display width of
+        /// certain unicode characters this is not necessarily the byte length of the string.
+        line_display_width: usize,
+    },
     /// Line ends in whitespace.
     #[error("left behind trailing whitespace")]
     TrailingWhitespace,
@@ -223,7 +233,7 @@ impl FormatReport {
         }
         for err in new_errors {
             match err.kind {
-                ErrorKind::LineOverflow(..) => {
+                ErrorKind::LineOverflow { .. } => {
                     errs.has_operational_errors = true;
                 }
                 ErrorKind::TrailingWhitespace => {
