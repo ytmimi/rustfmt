@@ -545,6 +545,14 @@ in your config file:
 edition = "2018"
 ```
 
+## `emit_relative_file_paths`
+
+Try to emit file paths relative to the current working directory when displaying errors.
+
+- **Default value**: `false`
+- **Possible values**: `true`, `false`
+- **Stable**: No (tracking issue: N/A)
+
 ## `empty_item_single_line`
 
 Put empty-body functions and impls on a single line

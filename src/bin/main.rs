@@ -375,6 +375,7 @@ fn format_and_emit_report<T: Write>(session: &mut Session<'_, T>, input: Input) 
                     "{}",
                     FormatReportFormatterBuilder::new(&report)
                         .enable_colors(should_print_with_colors(session))
+                        .relative_paths(session.config.emit_relative_file_paths())
                         .build()
                 );
             }

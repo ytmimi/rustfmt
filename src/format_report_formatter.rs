@@ -8,6 +8,7 @@ use std::fmt::{self, Display};
 pub struct FormatReportFormatterBuilder<'a> {
     report: &'a FormatReport,
     enable_colors: bool,
+    relative_paths: bool,
 }
 
 impl<'a> FormatReportFormatterBuilder<'a> {
@@ -16,6 +17,7 @@ impl<'a> FormatReportFormatterBuilder<'a> {
         Self {
             report,
             enable_colors: false,
+            relative_paths: false,
         }
     }
 
@@ -28,11 +30,20 @@ impl<'a> FormatReportFormatterBuilder<'a> {
         }
     }
 
+    /// Enables outputting paths relative to the current working directory
+    pub fn relative_paths(self, relative_paths: bool) -> Self {
+        Self {
+            relative_paths,
+            ..self
+        }
+    }
+
     /// Creates a new [`FormatReportFormatter`] from the settings in this builder.
     pub fn build(self) -> FormatReportFormatter<'a> {
         FormatReportFormatter {
             report: self.report,
             enable_colors: self.enable_colors,
+            relative_paths: self.relative_paths,
         }
     }
 }
@@ -43,6 +54,7 @@ impl<'a> FormatReportFormatterBuilder<'a> {
 pub struct FormatReportFormatter<'a> {
     report: &'a FormatReport,
     enable_colors: bool,
+    relative_paths: bool,
 }
 
 impl<'a> Display for FormatReportFormatter<'a> {
@@ -78,7 +90,11 @@ impl<'a> Display for FormatReportFormatter<'a> {
                     None
                 };
 
-                let origin = format!("{}:{}", file, error.line);
+                let origin = if self.relative_paths {
+                    format!("{}:{}", file.relative_to_cwd(), error.line)
+                } else {
+                    format!("{}:{}", file, error.line)
+                };
                 let slice = Slice {
                     source: &error.line_buffer.clone(),
                     line_start: error.line,

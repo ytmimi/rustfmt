@@ -25,6 +25,26 @@ pub enum FileName {
     Stdin,
 }
 
+impl FileName {
+    // Tries to provides the file path relative to the current working directory
+    pub fn relative_to_cwd(&self) -> Self {
+        match self {
+            FileName::Real(path) => {
+                if let Ok(current_dir) = std::env::current_dir() {
+                    let relative_path = path
+                        .strip_prefix(current_dir)
+                        .map(|p| p.to_owned())
+                        .unwrap_or(path.to_owned());
+                    FileName::Real(relative_path)
+                } else {
+                    FileName::Real(path.to_owned())
+                }
+            }
+            FileName::Stdin => FileName::Stdin,
+        }
+    }
+}
+
 impl From<rustc_span::FileName> for FileName {
     fn from(name: rustc_span::FileName) -> FileName {
         match name {

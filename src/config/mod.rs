@@ -177,6 +177,8 @@ create_config! {
          or they are left with trailing whitespaces";
     ignore: IgnoreList, IgnoreList::default(), false,
         "Skip formatting the specified files and directories";
+    emit_relative_file_paths: bool, false, false, "Try to emit file paths relative to the current \
+        working directory when displaying errors.";
 
     // Not user-facing
     verbose: Verbosity, Verbosity::Normal, false, "How much to information to emit to the user";
@@ -694,6 +696,7 @@ show_parse_errors = true
 error_on_line_overflow = false
 error_on_unformatted = false
 ignore = []
+emit_relative_file_paths = false
 emit_mode = "Files"
 make_backup = false
 "#,
