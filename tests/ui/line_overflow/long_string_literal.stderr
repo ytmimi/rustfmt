@@ -1,0 +1,9 @@
+error[internal]: line formatted, but exceeded maximum width (maximum: 50 (see `max_width` option), found: 85)
+ --> /Users/ytmimi/Documents/Projects/rust_projects/rustfmt/tests/ui/line_overflow/long_string_literal.rs:6:6:51
+  |
+6 |     println!("This is a really really long string that triggers an overflow warning")
+  |                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: set `error_on_unformatted = false` to suppress the warning against comments or string literals
+
+warning: rustfmt has failed to format. See previous 1 errors.

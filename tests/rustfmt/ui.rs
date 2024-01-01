@@ -138,3 +138,12 @@ fn deprecated() {
     let errors = ui_test_inner(files, args, false, true);
     assert!(errors == 0, "All deprecation UI tests should pass")
 }
+
+/// Check the output for line overflow errors; Lines that couldn't be format within the max_width
+#[test]
+fn line_overflow() {
+    let files = get_test_files(&PathBuf::from("tests/ui/line_overflow"), true, &[]);
+    let args  = default_ui_test_configs();
+    let errors = ui_test_inner(files, args, false, true);
+    assert!(errors == 0, "All line_overflow UI tests should pass")
+}
