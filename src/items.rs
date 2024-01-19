@@ -656,9 +656,16 @@ impl<'a> FmtVisitor<'a> {
         }
 
         let context = self.get_context();
-        // 1 = ','
-        let shape = self.shape().sub_width(1)?;
-        let attrs_str = field.attrs.rewrite(&context, shape)?;
+        let shape = self.shape();
+        let attrs_str = if context.config.version() == Version::Two {
+            field.attrs.rewrite(&context, shape)?
+        } else {
+            // Version::One formatting that was off by 1. See issue #5801
+            field.attrs.rewrite(&context, shape.sub_width(1)?)?
+        };
+        // sub_width(1) to take the trailing comma into account
+        let shape = shape.sub_width(1)?;
+
         let lo = field
             .attrs
             .last()
@@ -836,13 +843,15 @@ pub(crate) fn format_impl(
 
     if is_impl_single_line(context, items.as_slice(), &result, &where_clause_str, item)? {
         result.push_str(&where_clause_str);
-        if where_clause_str.contains('\n') || last_line_contains_single_line_comment(&result) {
-            // if the where_clause contains extra comments AND
-            // there is only one where-clause predicate
-            // recover the suppressed comma in single line where_clause formatting
+        if where_clause_str.contains('\n') {
+            // If there is only one where-clause predicate
+            // and the where-clause spans multiple lines,
+            // then recover the suppressed comma in single line where-clause formatting
             if generics.where_clause.predicates.len() == 1 {
                 result.push(',');
             }
+        }
+        if where_clause_str.contains('\n') || last_line_contains_single_line_comment(&result) {
             result.push_str(&format!("{sep}{{{sep}}}"));
         } else {
             result.push_str(" {}");
