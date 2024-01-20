@@ -173,10 +173,7 @@ pub(crate) fn combine_strs_with_missing_comments(
 ) -> Option<String> {
     trace!(
         "combine_strs_with_missing_comments `{}` `{}` {:?} {:?}",
-        prev_str,
-        next_str,
-        span,
-        shape
+        prev_str, next_str, span, shape
     );
 
     let mut result =
@@ -506,7 +503,7 @@ impl ItemizedBlock {
         let mut line_start = " ".repeat(indent);
 
         // Markdown blockquote start with a "> "
-        if line.trim_start().starts_with(">") {
+        if line.trim_start().starts_with('>') {
             // remove the original +2 indent because there might be multiple nested block quotes
             // and it's easier to reason about the final indent by just taking the length
             // of the new line_start. We update the indent because it effects the max width
@@ -657,7 +654,7 @@ impl<'a> CommentRewrite<'a> {
         while let Some(line) = iter.next() {
             result.push_str(line);
             result.push_str(match iter.peek() {
-                Some(next_line) if next_line.is_empty() => sep.trim_end(),
+                Some(&"") => sep.trim_end(),
                 Some(..) => sep,
                 None => "",
             });
@@ -839,7 +836,7 @@ impl<'a> CommentRewrite<'a> {
             }
         }
 
-        let is_markdown_header_doc_comment = is_doc_comment && line.starts_with("#");
+        let is_markdown_header_doc_comment = is_doc_comment && line.starts_with('#');
 
         // We only want to wrap the comment if:
         // 1) wrap_comments = true is configured
@@ -1764,7 +1761,7 @@ fn changed_comment_content(orig: &str, new: &str) -> bool {
     let code_comment_content = |code| {
         let slices = UngroupedCommentCodeSlices::new(code);
         slices
-            .filter(|&(ref kind, _, _)| *kind == CodeCharKind::Comment)
+            .filter(|(kind, _, _)| *kind == CodeCharKind::Comment)
             .flat_map(|(_, _, s)| CommentReducer::new(s))
     };
     let res = code_comment_content(orig).ne(code_comment_content(new));

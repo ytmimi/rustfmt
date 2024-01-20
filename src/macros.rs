@@ -389,7 +389,7 @@ fn rewrite_empty_macro_def_body(
         stmts: vec![].into(),
         id: rustc_ast::node_id::DUMMY_NODE_ID,
         rules: ast::BlockCheckMode::Default,
-        span: span,
+        span,
         tokens: None,
         could_be_bare_literal: false,
     };
@@ -1269,7 +1269,7 @@ impl MacroBranch {
         let has_block_body = old_body.starts_with('{');
 
         let mut config = context.config.clone();
-        config.set().hide_parse_errors(true);
+        config.set().show_parse_errors(false);
 
         result += " {";
 
