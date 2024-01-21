@@ -313,6 +313,134 @@ latest toolchain ($LATEST_TOOLCHAIN):
     rm -rf $TMP_DIR
 }
 
+function get_line_number_from_changelog() {
+    local PATH_TO_CHANGELOG=$1
+    local PATTERN=$2
+    echo $(grep -n -i "$PATTERN" "$PATH_TO_CHANGELOG" | cut -d : -f 1)
+}
+
+function latest_changelog_snippet() {
+    local PATH_TO_CHANGELOG=$1
+    local PREVIOUS_RELEASE_MARKER=$2
+    local START_MARKER_LINE=$(get_line_number_from_changelog $PATH_TO_CHANGELOG "\[Unreleased\]")
+
+    if [ -z "$START_MARKER_LINE" ]; then
+        echo "Could not find the start of the recent CHANGELOG entries"
+        return 1
+    fi
+
+    local START=$(($START_MARKER_LINE + 1))
+    local STOP=$(get_line_number_from_changelog $PATH_TO_CHANGELOG "$PREVIOUS_RELEASE_MARKER")
+
+    if [ -z "$STOP" ]; then
+        echo "Could not find the end of the recent CHANGELOG entries"
+        return 1
+    fi
+
+    local END=$(($STOP - 1))
+    # Print out the lines from START..=END
+    sed -n "$START,${END}p;${STOP}q" CHANGELOG.md
+}
+
+function rustfmt_to_rustc_subtree_pull() {
+    local CLONE_DIR=$1
+    local RUSTLANG_RUST_URL=$2
+    local RUSTLANG_RUST_FORK_URL=$3
+    local SUBTREE_PULL_BRANCH=$4
+
+    # Assumes that `get_main_branch_name` is run from within the rustfmt repo.
+    # When running in GitHub actions that should be true. We want to grab this
+    # info before we clone and cd into the rust-lang/rust repo below.
+    local RUSTFMT_REMOTE_HEAD=$(get_main_branch_name "origin")
+    echo "RUSTFMT_REMOTE_HEAD: $RUSTFMT_REMOTE_HEAD"
+    local UPSTREAM_RUSTFMT=$(rustfmt_git_url)
+    echo "UPSTREAM_RUSTFMT: $UPSTREAM_RUSTFMT"
+
+    # get_patched_subtree "$CLONE_DIR/git"
+    # Will CD into the rust directory
+    clone_rustlang_rust "$CLONE_DIR/rust" "$RUSTLANG_RUST_FORK_URL.git"
+    git remote add upstream $RUSTLANG_RUST_URL
+    RUSTLANGE_RUST_HEAD=$(get_main_branch_name "upstream")
+    git fetch upstream $RUSTLANGE_RUST_HEAD
+    git switch -c $SUBTREE_PULL_BRANCH upstream/$RUSTLANGE_RUST_HEAD
+    git subtree pull -P src/tools/rustfmt $UPSTREAM_RUSTFMT $RUSTFMT_REMOTE_HEAD
+
+    if [ $? -ne 0 ]; then
+        echo "Could not pull changes from $UPSTREAM_RUSTFMT $RUSTFMT_REMOTE_HEAD into $RUSTLANG_RUST_URL"
+        return 1
+    fi
+    git push origin $SUBTREE_PULL_BRANCH
+}
+
+function create_subtree_pull_pull_request() {
+    TODAY=$1
+    CHANGELOG_SNIPPET=$2
+    PR_BRANCH=$3
+    UPSTREAM_RUSTLANG_RUST_REPO_URL=$4
+
+    local PR_TITLE="Sync rustfmt subtree $TODAY"
+    local PR_MESSAGE="r? @ghost
+$CHANGELOG_SNIPPET
+"
+    # This assumes that we're currently in the forked rust-lang/rust directory
+    # in order to create a PR from the fork to upstream rust-lang/rust
+    local PR_URL=$(
+        gh pr create \
+            --title "$PR_TITLE" \
+            --body "$PR_MESSAGE" \
+            --head "$PR_BRANCH" \
+            --repo "$UPSTREAM_RUSTLANG_RUST_REPO_URL" \
+            --label "subtree-sync"
+    )
+
+    if [ -z "$PR_URL" ]; then
+        echo "Failed to Create subtree-pull Pull Request "
+    else
+        echo "Created Pull Request For ($PR_URL):
+
+$PR_TITLE
+$PR_MESSAGE
+"
+    fi
+}
+
+function run_rustfmt_subtree_pull() {
+    set -e
+    local RUSTLANG_RUST_URL=$1
+    local RUSTLANG_RUST_FORK_URL=$2
+    local PREVIOUS_RELEASE_MARKER=$3
+
+    local CWD=$(pwd)
+    local TMP_DIR=$(mktemp -d)
+    local TODAY=$(gdate --rfc-3339=date)
+    local SUBTREE_PULL_BRANCH="sync-from-rustfmt-$TODAY"
+
+    rustfmt_to_rustc_subtree_pull \
+        $TMP_DIR \
+        $RUSTLANG_RUST_URL \
+        $RUSTLANG_RUST_FORK_URL \
+        $SUBTREE_PULL_BRANCH \
+
+    LATEST_CHANGELOG_SNIPPET=$(latest_changelog_snippet "$CWD/CHANGELOG.md" $PREVIOUS_RELEASE_MARKER)
+    if [ $? -ne 0 ] || [ -z "$LATEST_CHANGELOG_SNIPPET" ]; then
+        echo "Could not find the latest CHANGELOG snippet"
+        return 1
+    fi
+
+    create_subtree_pull_pull_request \
+        $TODAY \
+        $LATEST_CHANGELOG_SNIPPET \
+        $SUBTREE_PULL_BRANCH \
+        $RUSTLANG_RUST_URL
+
+
+    if [ $? -ne 0 ]; then
+        echo "subtree pull failed ❌"
+    fi
+
+    rm -rf $TMP_DIR
+}
+
 function print_help() {
     echo "Tools to help automate subtree syncs
 
@@ -320,6 +448,8 @@ usage: subtree_sync.sh <command> [<args>]
 
 commands:
     subtree-push           Push changes from rust-lang/rust back to rustfmt.
+    subtree-pull           Pull changes from rustfmt into rust-lang/rust.
+                           To avoid merge conflicts run the subtree-push first.
 "
 }
 
@@ -333,6 +463,11 @@ function main() {
         subtree-push)
             install_latest_nightly
             run_rustfmt_subtree_push $RUSTLANG_RUST_URL
+            ;;
+        subtree-pull)
+            local RUSTLANG_RUST_FORK_URL=$3
+            local PREVIOUS_RELEASE_MARKER=$4
+            run_rustfmt_subtree_pull $RUSTLANG_RUST_URL $RUSTLANG_RUST_FORK_URL $PREVIOUS_RELEASE_MARKER
             ;;
         *)
             print_help
