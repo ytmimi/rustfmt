@@ -11,7 +11,7 @@ use rustc_ast as ast;
 use rustc_span::symbol::Ident;
 use rustc_span::Span;
 
-use crate::comment::combine_strs_with_missing_comments;
+use crate::comment::{combine_strs_with_missing_comments, contains_comment};
 use crate::rewrite::RewriteContext;
 use crate::shape::Shape;
 use crate::utils::rewrite_ident;
@@ -23,6 +23,13 @@ pub(crate) fn format_header(
 ) -> String {
     debug!(?parts, "format_header");
     let shape = shape.infinite_width();
+
+    // FIXME(ytmimi) Don't apply any formatting if the header contains comments.
+    // the rustfmt team needs to decide how to handle comments within the header
+    if comments_in_header(context, &parts) {
+        let span = header_span(&parts).expect("If we have comments we have headers");
+        return context.snippet(span).to_owned();
+    }
 
     // Empty `HeaderPart`s are ignored.
     let mut parts = parts.into_iter().filter(|x| !x.snippet.is_empty());
@@ -49,6 +56,23 @@ pub(crate) fn format_header(
     }
 
     result
+}
+
+/// Get the Span of the entire header
+fn header_span(parts: &[HeaderPart]) -> Option<Span> {
+    let first = parts.first()?;
+    let last = parts.last()?;
+    Some(first.span.with_hi(last.span.hi()))
+}
+
+/// Check if there are any comments in the header parts
+fn comments_in_header(context: &RewriteContext<'_>, parts: &[HeaderPart]) -> bool {
+    let Some(span) = header_span(parts) else {
+        return false;
+    };
+
+    let snippet = context.snippet(span);
+    contains_comment(snippet)
 }
 
 #[derive(Debug)]
