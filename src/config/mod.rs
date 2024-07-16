@@ -149,6 +149,7 @@ create_config! {
     blank_lines_lower_bound: BlankLinesLowerBound, false,
         "Minimum number of blank lines which must be put between items";
     edition: EditionConfig, true, "The edition of the parser (RFC 2052)";
+    style_edition: StyleEditionConfig, true, "The style edition to use for formatting";
     version: VersionConfig, false, "Version of formatting rules";
     inline_attribute_width: InlineAttributeWidth, false,
         "Write an item and its attribute on the same line \
@@ -242,11 +243,15 @@ impl Config {
     ///
     /// Returns a `Config` if the config could be read and parsed from
     /// the file, otherwise errors.
-    pub(super) fn from_toml_path(file_path: &Path) -> Result<Config, Error> {
+    pub(super) fn from_toml_path(
+        style_edition: Option<StyleEdition>,
+        edition: Option<Edition>,
+        file_path: &Path
+    ) -> Result<Config, Error> {
         let mut file = File::open(&file_path)?;
         let mut toml = String::new();
         file.read_to_string(&mut toml)?;
-        Config::from_toml(&toml, file_path.parent().unwrap())
+        Config::from_toml(style_edition, edition, &toml, file_path.parent().unwrap())
             .map_err(|err| Error::new(ErrorKind::InvalidData, err))
     }
 
@@ -259,7 +264,11 @@ impl Config {
     ///
     /// Returns the `Config` to use, and the path of the project file if there was
     /// one.
-    pub(super) fn from_resolved_toml_path(dir: &Path) -> Result<(Config, Option<PathBuf>), Error> {
+    pub(super) fn from_resolved_toml_path(
+        style_edition: Option<StyleEdition>,
+        edition: Option<Edition>,
+        dir: &Path
+    ) -> Result<(Config, Option<PathBuf>), Error> {
         /// Try to find a project file in the given directory and its parents.
         /// Returns the path of the nearest project file if one exists,
         /// or `None` if no project file was found.
@@ -305,11 +314,19 @@ impl Config {
 
         match resolve_project_file(dir)? {
             None => Ok((Config::default(), None)),
-            Some(path) => Config::from_toml_path(&path).map(|config| (config, Some(path))),
+            Some(path) => {
+                Config::from_toml_path(style_edition, edition, &path)
+                    .map(|config| (config, Some(path)))
+            }
         }
     }
 
-    pub(crate) fn from_toml(toml: &str, dir: &Path) -> Result<Config, String> {
+    pub(crate) fn from_toml(
+            style_edition: Option<StyleEdition>,
+            edition: Option<Edition>,
+            toml: &str,
+            dir: &Path
+    ) -> Result<Config, String> {
         let parsed: ::toml::Value = toml
             .parse()
             .map_err(|e| format!("Could not parse TOML: {}", e))?;
@@ -323,12 +340,30 @@ impl Config {
                 err.push_str(msg)
             }
         }
-        match parsed.try_into() {
+        match parsed.try_into::<PartialConfig>() {
             Ok(parsed_config) => {
                 if !err.is_empty() {
                     eprint!("{err}");
                 }
-                Ok(Config::default().fill_from_parsed_config(parsed_config, dir))
+
+                // Style Edition loading rules
+                // 1. --style-edition specified on the command line
+                // 2. style_edition specified under --config ... on the command line
+                // 3. style_edition specified within the corresponding rustfmt.toml file
+                // 4. --edition specified on the command line
+                // 5. edition specified under --config ... on the command line
+                // 6. edition specified within the corresponding config file
+                //
+                // Rules 1 and 2 are assumed to be resolved for the provided `style_edition` when
+                // parsing command line arguments and rules 4 and 5 are also assumed to be resolved
+                // for `edition` when parsing command line arguments.
+                let style_edition = style_edition
+                    .or_else(|| parsed_config.style_edition)
+                    .or_else(|| edition.map(|e| StyleEdition::from(e)))
+                    .or_else(|| parsed_config.edition.map(|e| StyleEdition::from(e)))
+                    .unwrap_or_default();
+
+                Ok(style_edition.config().fill_from_parsed_config(parsed_config, dir))
             }
             Err(e) => {
                 err.push_str("Error: Decoding config file failed:\n");
@@ -343,6 +378,8 @@ impl Config {
 /// Loads a config by checking the client-supplied options and if appropriate, the
 /// file system (including searching the file system for overrides).
 pub fn load_config<O: CliOptions>(
+    style_edition: Option<StyleEdition>,
+    edition: Option<Edition>,
     file_path: Option<&Path>,
     options: Option<O>,
 ) -> Result<(Config, Option<PathBuf>), Error> {
@@ -352,9 +389,10 @@ pub fn load_config<O: CliOptions>(
     };
 
     let result = if let Some(over_ride) = over_ride {
-        Config::from_toml_path(over_ride.as_ref()).map(|p| (p, Some(over_ride.to_owned())))
+        Config::from_toml_path(style_edition, edition, over_ride.as_ref())
+            .map(|p| (p, Some(over_ride.to_owned())))
     } else if let Some(file_path) = file_path {
-        Config::from_resolved_toml_path(file_path)
+        Config::from_resolved_toml_path(style_edition, edition, file_path)
     } else {
         Ok((Config::default(), None))
     };
@@ -586,7 +624,7 @@ mod test {
 
     #[test]
     fn test_was_set() {
-        let config = Config::from_toml("hard_tabs = true", Path::new("")).unwrap();
+        let config = Config::from_toml(None, None, "hard_tabs = true", Path::new("")).unwrap();
 
         assert_eq!(config.was_set().hard_tabs(), true);
         assert_eq!(config.was_set().verbose(), false);
@@ -736,7 +774,7 @@ make_backup = false
     #[nightly_only_test]
     #[test]
     fn test_unstable_from_toml() {
-        let config = Config::from_toml("unstable_features = true", Path::new("")).unwrap();
+        let config = Config::from_toml(None, None, "unstable_features = true", Path::new("")).unwrap();
         assert_eq!(config.was_set().unstable_features(), true);
         assert_eq!(config.unstable_features(), true);
     }
@@ -752,7 +790,7 @@ make_backup = false
                 unstable_features = true
                 merge_imports = true
             "#;
-            let config = Config::from_toml(toml, Path::new("")).unwrap();
+            let config = Config::from_toml(None, None, toml, Path::new("")).unwrap();
             assert_eq!(config.imports_granularity(), ImportGranularity::Crate);
         }
 
@@ -764,7 +802,7 @@ make_backup = false
                 merge_imports = true
                 imports_granularity = "Preserve"
             "#;
-            let config = Config::from_toml(toml, Path::new("")).unwrap();
+            let config = Config::from_toml(None, None, toml, Path::new("")).unwrap();
             assert_eq!(config.imports_granularity(), ImportGranularity::Preserve);
         }
 
@@ -775,7 +813,7 @@ make_backup = false
                 unstable_features = true
                 merge_imports = true
             "#;
-            let mut config = Config::from_toml(toml, Path::new("")).unwrap();
+            let mut config = Config::from_toml(None, None, toml, Path::new("")).unwrap();
             config.override_value("imports_granularity", "Preserve");
             assert_eq!(config.imports_granularity(), ImportGranularity::Preserve);
         }
@@ -787,7 +825,7 @@ make_backup = false
                 unstable_features = true
                 imports_granularity = "Module"
             "#;
-            let mut config = Config::from_toml(toml, Path::new("")).unwrap();
+            let mut config = Config::from_toml(None, None, toml, Path::new("")).unwrap();
             config.override_value("merge_imports", "true");
             // no effect: the new option always takes precedence
             assert_eq!(config.imports_granularity(), ImportGranularity::Module);
@@ -804,7 +842,7 @@ make_backup = false
                 use_small_heuristics = "Default"
                 max_width = 200
             "#;
-            let config = Config::from_toml(toml, Path::new("")).unwrap();
+            let config = Config::from_toml(None, None, toml, Path::new("")).unwrap();
             assert_eq!(config.array_width(), 120);
             assert_eq!(config.attr_fn_like_width(), 140);
             assert_eq!(config.chain_width(), 120);
@@ -820,7 +858,7 @@ make_backup = false
                 use_small_heuristics = "Max"
                 max_width = 120
             "#;
-            let config = Config::from_toml(toml, Path::new("")).unwrap();
+            let config = Config::from_toml(None, None, toml, Path::new("")).unwrap();
             assert_eq!(config.array_width(), 120);
             assert_eq!(config.attr_fn_like_width(), 120);
             assert_eq!(config.chain_width(), 120);
@@ -836,7 +874,7 @@ make_backup = false
                 use_small_heuristics = "Off"
                 max_width = 100
             "#;
-            let config = Config::from_toml(toml, Path::new("")).unwrap();
+            let config = Config::from_toml(None, None, toml, Path::new("")).unwrap();
             assert_eq!(config.array_width(), usize::max_value());
             assert_eq!(config.attr_fn_like_width(), usize::max_value());
             assert_eq!(config.chain_width(), usize::max_value());
@@ -858,7 +896,7 @@ make_backup = false
                 struct_lit_width = 30
                 struct_variant_width = 34
             "#;
-            let config = Config::from_toml(toml, Path::new("")).unwrap();
+            let config = Config::from_toml(None, None, toml, Path::new("")).unwrap();
             assert_eq!(config.array_width(), 20);
             assert_eq!(config.attr_fn_like_width(), 40);
             assert_eq!(config.chain_width(), 20);
@@ -880,7 +918,7 @@ make_backup = false
                 struct_lit_width = 30
                 struct_variant_width = 34
             "#;
-            let config = Config::from_toml(toml, Path::new("")).unwrap();
+            let config = Config::from_toml(None, None, toml, Path::new("")).unwrap();
             assert_eq!(config.array_width(), 20);
             assert_eq!(config.attr_fn_like_width(), 40);
             assert_eq!(config.chain_width(), 20);
@@ -902,7 +940,7 @@ make_backup = false
                 struct_lit_width = 30
                 struct_variant_width = 34
             "#;
-            let config = Config::from_toml(toml, Path::new("")).unwrap();
+            let config = Config::from_toml(None, None, toml, Path::new("")).unwrap();
             assert_eq!(config.array_width(), 20);
             assert_eq!(config.attr_fn_like_width(), 40);
             assert_eq!(config.chain_width(), 20);
@@ -918,7 +956,7 @@ make_backup = false
                 max_width = 90
                 fn_call_width = 95
             "#;
-            let config = Config::from_toml(toml, Path::new("")).unwrap();
+            let config = Config::from_toml(None, None, toml, Path::new("")).unwrap();
             assert_eq!(config.fn_call_width(), 90);
         }
 
@@ -928,7 +966,7 @@ make_backup = false
                 max_width = 80
                 attr_fn_like_width = 90
             "#;
-            let config = Config::from_toml(toml, Path::new("")).unwrap();
+            let config = Config::from_toml(None, None, toml, Path::new("")).unwrap();
             assert_eq!(config.attr_fn_like_width(), 80);
         }
 
@@ -938,7 +976,7 @@ make_backup = false
                 max_width = 78
                 struct_lit_width = 90
             "#;
-            let config = Config::from_toml(toml, Path::new("")).unwrap();
+            let config = Config::from_toml(None, None, toml, Path::new("")).unwrap();
             assert_eq!(config.struct_lit_width(), 78);
         }
 
@@ -948,7 +986,7 @@ make_backup = false
                 max_width = 80
                 struct_variant_width = 90
             "#;
-            let config = Config::from_toml(toml, Path::new("")).unwrap();
+            let config = Config::from_toml(None, None, toml, Path::new("")).unwrap();
             assert_eq!(config.struct_variant_width(), 80);
         }
 
@@ -958,7 +996,7 @@ make_backup = false
                 max_width = 60
                 array_width = 80
             "#;
-            let config = Config::from_toml(toml, Path::new("")).unwrap();
+            let config = Config::from_toml(None, None, toml, Path::new("")).unwrap();
             assert_eq!(config.array_width(), 60);
         }
 
@@ -968,7 +1006,7 @@ make_backup = false
                 max_width = 80
                 chain_width = 90
             "#;
-            let config = Config::from_toml(toml, Path::new("")).unwrap();
+            let config = Config::from_toml(None, None, toml, Path::new("")).unwrap();
             assert_eq!(config.chain_width(), 80);
         }
 
@@ -978,7 +1016,7 @@ make_backup = false
                 max_width = 70
                 single_line_if_else_max_width = 90
             "#;
-            let config = Config::from_toml(toml, Path::new("")).unwrap();
+            let config = Config::from_toml(None, None,toml, Path::new("")).unwrap();
             assert_eq!(config.single_line_if_else_max_width(), 70);
         }
 

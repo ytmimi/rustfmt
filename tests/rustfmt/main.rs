@@ -219,3 +219,20 @@ fn rustfmt_generates_no_error_if_failed_format_code_in_doc_comments() {
     assert!(stderr.is_empty());
     assert!(stdout.is_empty());
 }
+
+
+#[cfg(test)]
+mod load_style_edition {
+    use super::*;
+
+    #[rustfmt_only_ci_test]
+    #[test]
+    fn print_default_config_with_style_edition() {
+        for edition in ["2015", "2018", "2021", "2024"] {
+            assert_that!(
+                &["--print-config", "default", "--style-edition", edition],
+                contains(&format!("style_edition = {:?}", edition))
+            );
+        }
+    }
+}

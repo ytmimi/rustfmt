@@ -8,7 +8,7 @@ use std::process::Command;
 use std::str::FromStr;
 
 use getopts::{Matches, Options};
-use rustfmt_nightly as rustfmt;
+use rustfmt_nightly::{self as rustfmt, Edition, StyleEdition};
 use tracing_subscriber::EnvFilter;
 
 use crate::rustfmt::{load_config, CliOptions, FormatReportFormatterBuilder, Input, Session};
@@ -57,9 +57,9 @@ fn get_files(input: &str) -> Vec<&str> {
         .collect()
 }
 
-fn fmt_files(files: &[&str]) -> i32 {
+fn fmt_files(style_edition: Option<StyleEdition>, edition: Option<Edition>, files: &[&str]) -> i32 {
     let (config, _) =
-        load_config::<NullOptions>(Some(Path::new(".")), None).expect("couldn't load config");
+        load_config::<NullOptions>(style_edition, edition, Some(Path::new(".")), None).expect("couldn't load config");
 
     let mut exit_code = 0;
     let mut out = stdout();
@@ -121,6 +121,16 @@ fn make_opts() -> Options {
     opts.optflag("h", "help", "show this message");
     opts.optflag("c", "check", "check only, don't format (unimplemented)");
     opts.optflag("u", "uncommitted", "format uncommitted files");
+    opts.optopt("", "edition", "Rust edition to use", "[2015|2018|2021]");
+    opts.optopt(
+        "",
+        "style-edition",
+        "Rustfmt style edition used to format your code. If specified, this style edition will \
+        take precedence over the value configured in any `rustfmt.toml`. rustfmt output may \
+        differ between style editions. If not specified, style-edition will be inferred from the \
+        configured `--edition`",
+        "[2015|2018|2021|2024]",
+    );
     opts
 }
 
@@ -187,9 +197,34 @@ fn main() {
 
     let stdout = git_diff(&config.commits);
     let files = get_files(&stdout);
+
+    let style_edition = if let Some(ref value) = matches.opt_str("style-edition") {
+        match StyleEdition::from_str(&value) {
+            Ok(se) => Some(se),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+     } else {
+        Some(StyleEdition::default())
+     };
+
+    let edition = if let Some(ref value) = matches.opt_str("edition") {
+        match Edition::from_str(&value) {
+            Ok(se) => Some(se),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+     } else {
+        Some(Edition::default())
+     };
+
     debug!("files: {:?}", files);
     let files = prune_files(files);
     debug!("pruned files: {:?}", files);
-    let exit_code = fmt_files(&files);
+    let exit_code = fmt_files(style_edition, edition,  &files);
     std::process::exit(exit_code);
 }

@@ -16,6 +16,8 @@ use crate::config::lists::*;
 use crate::config::macro_names::MacroSelectors;
 use crate::config::Config;
 
+use super::style_edition::StyleEditionDefault;
+
 #[config_type]
 pub enum NewlineStyle {
     /// Auto-detect based on the raw source input.
@@ -495,6 +497,41 @@ pub enum StyleEdition {
     #[doc_hint = "2024"]
     /// [Edition 2024]().
     Edition2024,
+}
+
+impl Default for StyleEdition {
+    fn default() -> Self {
+        StyleEdition::Edition2015
+    }
+}
+
+impl From<Edition> for StyleEdition {
+    fn from(value: Edition) -> Self {
+        match value {
+            Edition::Edition2015 => StyleEdition::Edition2015,
+            Edition::Edition2018 => StyleEdition::Edition2018,
+            Edition::Edition2021 => StyleEdition::Edition2021,
+            Edition::Edition2024 => StyleEdition::Edition2024,
+        }
+    }
+
+}
+
+impl StyleEdition {
+    pub fn config(self) -> Config {
+        Config::default_with_style_edition(self)
+    }
+}
+
+/// Unit struct that implements `StyleEditionDefault` for `StyleEdition`
+pub struct StyleEditionConfig;
+
+impl StyleEditionDefault for StyleEditionConfig {
+    type ConfigType = StyleEdition;
+
+    fn style_edition_default(style_edition: StyleEdition) -> Self::ConfigType {
+        style_edition
+    }
 }
 
 /// Defines unit structs to implement `StyleEditionDefault` for.
